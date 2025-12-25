@@ -1,0 +1,17 @@
+/out
+bin/
+build/
+build32/
+build64/
+/.vs
+.idea/
+.gradle/
+.cxx/
+CMakeSettings.json
+Makefile
+.vscode
+external/
+libsdl/
+local.properties
+debug/
+release/

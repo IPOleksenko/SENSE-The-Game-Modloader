@@ -12,13 +12,13 @@ target_link_options(${PROJECT_NAME}
         $<$<CONFIG:Debug>:/SUBSYSTEM:CONSOLE>
 )
 
-# Copy DLL files to the build directory (if applicable)
+# Copy DLL files to the build directory for proxying
 add_custom_command(
     TARGET  ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2_image::SDL2_image> $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2_ttf::SDL2_ttf> $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2_mixer::SDL2_mixer> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2> $<TARGET_FILE_DIR:${PROJECT_NAME}>/SDL2_original.dll
+        # COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2_image> $<TARGET_FILE_DIR:${PROJECT_NAME}>/SDL2_image.dll
+        # COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2_ttf> $<TARGET_FILE_DIR:${PROJECT_NAME}>/SDL2_ttf.dll
+        # COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL2_mixer> $<TARGET_FILE_DIR:${PROJECT_NAME}>/SDL2_mixer.dll
     COMMENT "Copying DLL files to the binary directory"
 )
 

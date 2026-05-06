@@ -1,0 +1,17 @@
+/out
+bin/
+[Bb][Uu][Ii][Ll][Dd]*/
+/.vs
+.idea/
+.gradle/
+.cxx/
+CMakeSettings.json
+Makefile
+.vscode
+SENSE_THE_GAME_MODLOADER.sh
+external/
+libsdl/
+local.properties
+debug/
+release/
+*.log

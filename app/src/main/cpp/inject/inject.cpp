@@ -36,7 +36,7 @@ bool createProcess(PROCESS_INFORMATION& pi) {
         LOG_ERROR("CreateProcessA");
         return false;
     }
-    LOG_ERROR("Target process created suspended.");
+    LOG_INFO("Target process created suspended.");
     return true;
 }
 

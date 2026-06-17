@@ -1,8 +1,6 @@
 #include <inject/inject.hpp>
 #include <log/logger.hpp>
 
-const char* TARGET_PATH = "SENSE_THE_GAME.exe";
-
 std::vector<std::string> getDllFiles(const std::string& folder) {
     std::vector<std::string> result;
     std::string searchPath = folder + "\\*.dll";
@@ -23,12 +21,12 @@ std::vector<std::string> getDllFiles(const std::string& folder) {
     return result;
 }
 
-bool createProcess(PROCESS_INFORMATION& pi) {
+bool createProcess(PROCESS_INFORMATION& pi, const char* path) {
     STARTUPINFOA si{};
     si.cb = sizeof(si);
 
     BOOL success = CreateProcessA(
-        TARGET_PATH, NULL, NULL, NULL, FALSE,
+        path, NULL, NULL, NULL, FALSE,
         CREATE_SUSPENDED, NULL, NULL, &si, &pi
     );
 

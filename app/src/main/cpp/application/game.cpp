@@ -3,20 +3,24 @@
 #include <inject/inject.hpp>
 
 #include <iostream>
-#include <windows.h>
 #include <cstring>
 #include <vector>
 #include <tlhelp32.h>
 
 Game::Game() : m_isInit(true) {}
 
-Game::~Game() { m_isInit = false; }
+Game::~Game() {
+    if (pi.hThread) CloseHandle(pi.hThread);
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+    
+    m_isInit = false; 
+}
 
 bool Game::isInit() const {
     return m_isInit;
 }
 
-uintptr_t GetProcessBaseAddress(HANDLE hProcess, DWORD processId) {
+uintptr_t Game::GetProcessBaseAddress(HANDLE hProcess, DWORD processId) {
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     if (ntdll) {
         typedef NTSTATUS(NTAPI* pNtQueryInformationProcess)(
@@ -72,17 +76,7 @@ uintptr_t GetProcessBaseAddress(HANDLE hProcess, DWORD processId) {
     return 0;
 }
 
-bool PatchGameStringDirect(PROCESS_INFORMATION& pi, const char* newText) {
-    uintptr_t baseAddr = GetProcessBaseAddress(pi.hProcess, pi.dwProcessId);
-    if (!baseAddr) {
-        LOG_ERROR("Failed to get process base address");
-        return false;
-    }
-
-    LOG_INFO(("Game base address: 0x" + std::to_string(baseAddr)).c_str());
-
-    uintptr_t stringAddr = baseAddr + 0x1BE00;
-
+bool Game::PatchGameStringDirect(PROCESS_INFORMATION& pi, const char* newText) {
     char currentText[20] = { 0 };
     ReadProcessMemory(pi.hProcess, (LPCVOID)stringAddr, currentText, 15, NULL);
 
@@ -111,26 +105,47 @@ bool PatchGameStringDirect(PROCESS_INFORMATION& pi, const char* newText) {
 }
 
 
-int Game::run() {
-    if (!isInit()) return 1;
+bool Game::run() {
+    if (!isInit()) return EXIT_FAILURE;
 
-    PROCESS_INFORMATION pi{};
-    if (!createProcess(pi)) return 1;
+    if (!createProcess(pi, TARGET_PATH)) return EXIT_FAILURE;
 
-    bool patchStringSuccess = PatchGameStringDirect(pi, "Moded");
+    // Get base address before process creation to ensure we have the correct handle and process ID
+    baseAddr = GetProcessBaseAddress(pi.hProcess, pi.dwProcessId);
+    if (!baseAddr) {
+        LOG_ERROR("Failed to get process base address");
+        return EXIT_FAILURE;
+    } LOG_INFO(("Game base address: 0x" + std::to_string(baseAddr)).c_str());
+    
+    // Calculate string address using the base address and offset
+    stringAddr = baseAddr + stringOffset; 
+    LOG_INFO(("Target string address: 0x" + std::to_string(stringAddr)).c_str());
 
-    bool injectionResult = injectDLL(pi);
+    // Inject DLLs into the target process
+    injectionResult = injectDLL(pi);
     if (!injectionResult) {
-        LOG_ERROR("Injection failed for all DLLs.");
-        TerminateProcess(pi.hProcess, 1);
+        LOG_WARN("Injection failed for all DLLs or DLLs not found.");
+        patchStringSuccess = PatchGameStringDirect(pi, "No Injected DLLs");
     }
     else {
-        ResumeThread(pi.hThread);
-        LOG_INFO("Main thread resumed. Game is running with injected mods.");
+        patchStringSuccess = PatchGameStringDirect(pi, "Injected");
+        if (!patchStringSuccess) {
+            LOG_ERROR("Failed to patch the game string.");
+            TerminateProcess(pi.hProcess, 1);
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            return EXIT_FAILURE;
+        }
     }
 
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
+    ResumeThread(pi.hThread);
 
-    return injectionResult ? 0 : 1;
+    bool ok = injectionResult && patchStringSuccess;
+    LOG_INFO(ok
+        ? "Main thread resumed. Game is running with injected mods."
+        : "Main thread resumed. Game is running without injected mods.");
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    return EXIT_SUCCESS;
 }

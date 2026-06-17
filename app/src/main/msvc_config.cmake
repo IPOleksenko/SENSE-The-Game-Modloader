@@ -8,7 +8,7 @@ target_compile_options(${PROJECT_NAME}
 # Enable console on debug
 target_link_options(${PROJECT_NAME} 
     PRIVATE
-        $<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>
+        $<$<CONFIG:Release>:/SUBSYSTEM:CONSOLE>
         $<$<CONFIG:Debug>:/SUBSYSTEM:CONSOLE>
 )
 

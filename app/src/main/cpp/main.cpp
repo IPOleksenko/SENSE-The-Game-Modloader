@@ -4,11 +4,12 @@
 
 int main(int, char*[]) {
     Game game = Game();
+    bool success;
 
     if(game.isInit()) {
-        game.run();
+        success = game.run();
     }
 
     system("pause");
-    return EXIT_SUCCESS;
+    return success;
 }

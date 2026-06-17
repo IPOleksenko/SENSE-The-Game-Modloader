@@ -1,6 +1,7 @@
 #pragma once
 
-extern const char* TARGET_PATH;
+#include <cstdint>
+#include <windows.h>
 
 class Game {
 public:
@@ -8,8 +9,22 @@ public:
     ~Game();
 
     bool isInit() const;
-    int run();
+    bool run();
 
 private:
     bool m_isInit;
+
+    const char* TARGET_PATH = "SENSE_THE_GAME.exe";
+    
+    PROCESS_INFORMATION pi{};
+
+    uintptr_t baseAddr;
+    uintptr_t stringAddr;
+    uintptr_t stringOffset = 0x40C40; // "by IPOleksenko"
+
+    bool patchStringSuccess;
+    bool injectionResult;
+
+    uintptr_t GetProcessBaseAddress(HANDLE hProcess, DWORD processId);
+    bool PatchGameStringDirect(PROCESS_INFORMATION& pi, const char* newText);
 };

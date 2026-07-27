@@ -20,7 +20,7 @@ private:
 
     uintptr_t baseAddr;
     uintptr_t stringAddr;
-    uintptr_t stringOffset = 0x40C40; // "by IPOleksenko"
+    uintptr_t stringOffset = 0x3EC20; // "by IPOleksenko"
 
     bool patchStringSuccess;
     bool injectionResult;

@@ -1,0 +1,90 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get commit information
+        id: info
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          COMMIT_NUMBER=$(git rev-list --count HEAD)
+
+          echo "commit_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "commit_number=$COMMIT_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Configure CMake
+        run: >
+          cmake -S app/src/main
+          -B build_x86_64
+          -G "Visual Studio 17 2022"
+          -A x64
+          -DBUILD_SHARED_LIBS=ON
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=build/release_x86_64
+          -DCMAKE_C_FLAGS="/D_WIN32_WINNT=0x0601 /DNTDDI_VERSION=0x06010000"
+          -DCMAKE_CXX_FLAGS="/D_WIN32_WINNT=0x0601 /DNTDDI_VERSION=0x06010000"
+
+      - name: Build
+        run: cmake --build build_x86_64 --config Release
+
+      - name: Install
+        run: cmake --install build_x86_64
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $zipName = "modloader-windows-x86_64-${{ steps.info.outputs.commit_number }}-${{ steps.info.outputs.short_sha }}.zip"
+
+          Compress-Archive `
+            -Path build/release_x86_64/* `
+            -DestinationPath $zipName
+
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: modloader-windows-x86_64-${{ steps.info.outputs.commit_number }}-${{ steps.info.outputs.short_sha }}
+          path: ${{ env.ZIP_NAME }}
+
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.commit_number }}-${{ steps.info.outputs.short_sha }}
+          name: "#${{ steps.info.outputs.commit_number }} • ${{ steps.info.outputs.short_sha }}"
+          body: |
+            ## Modloader Windows x86_64
+
+            **Commit:** #${{ steps.info.outputs.commit_number }}
+            **Commit ID:** `${{ steps.info.outputs.commit_sha }}`
+            **Platform:** `Windows x86_64`
+            **Configuration:** `Release`
+            **Author:** `${{ github.actor }}`
+
+            ### Commit message
+
+            ${{ github.event.head_commit.message }}
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true

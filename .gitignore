@@ -15,3 +15,10 @@ local.properties
 debug/
 release/
 *.log
+# Binary artifacts (built outputs)
+*.dll
+*.lib
+*.exp
+*.pdb
+# Steamworks redistributable needed by CI
+!app/src/main/assets/steam_api64.dll

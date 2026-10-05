@@ -1,5 +1,14 @@
 #include <inject/inject.hpp>
 #include <log/logger.hpp>
+#include <algorithm>
+
+static std::string toAbsolutePath(const std::string& path) {
+    char fullPath[MAX_PATH] = {};
+    if (GetFullPathNameA(path.c_str(), MAX_PATH, fullPath, nullptr)) {
+        return std::string(fullPath);
+    }
+    return path;
+}
 
 std::vector<std::string> getDllFiles(const std::string& folder) {
     std::vector<std::string> result;
@@ -13,7 +22,16 @@ std::vector<std::string> getDllFiles(const std::string& folder) {
 
     do {
         if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            result.push_back(folder + "\\" + fd.cFileName);
+            // Ignore core engine / library DLLs if placed in mods folder
+            if (_stricmp(fd.cFileName, "SENSE_THE_GAME_MODLOADER_api.dll") == 0 ||
+                _stricmp(fd.cFileName, "steam_api64.dll") == 0 ||
+                _stricmp(fd.cFileName, "SDL2.dll") == 0 ||
+                _stricmp(fd.cFileName, "SDL2_image.dll") == 0 ||
+                _stricmp(fd.cFileName, "SDL2_mixer.dll") == 0 ||
+                _stricmp(fd.cFileName, "SDL2_ttf.dll") == 0) {
+                continue;
+            }
+            result.push_back(toAbsolutePath(folder + "\\" + fd.cFileName));
         }
     } while (FindNextFileA(hFind, &fd));
 
@@ -67,6 +85,49 @@ LPVOID writeDllPath(HANDLE process, const char* dll_path) {
     return remoteMem;
 }
 
+static bool injectSingleDll(PROCESS_INFORMATION& pi, LPVOID loadLib, const std::string& dllPath, bool isDependency = false) {
+    std::string absPath = toAbsolutePath(dllPath);
+
+    LPVOID remoteMem = writeDllPath(pi.hProcess, absPath.c_str());
+    if (!remoteMem) {
+        LOG_WARN(("Failed to write DLL path into target process: " + absPath).c_str());
+        return false;
+    }
+
+    HANDLE hRemoteThread = CreateRemoteThread(
+        pi.hProcess, NULL, 0,
+        (LPTHREAD_START_ROUTINE)loadLib,
+        remoteMem, 0, NULL
+    );
+
+    if (!hRemoteThread) {
+        LOG_ERROR("CreateRemoteThread");
+        VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
+        return false;
+    }
+
+    WaitForSingleObject(hRemoteThread, INFINITE);
+
+    DWORD exitCode = 0;
+    bool success = false;
+    if (GetExitCodeThread(hRemoteThread, &exitCode)) {
+        if (exitCode != 0) {
+            success = true;
+            if (!isDependency) {
+                LOG_INFO(("Success! DLL loaded, handle = 0x" + std::to_string(exitCode)).c_str());
+            }
+        } else {
+            if (!isDependency) {
+                LOG_INFO("LoadLibrary returned NULL – injection failed (DLL likely missing dependencies or wrong architecture).");
+            }
+        }
+    }
+
+    CloseHandle(hRemoteThread);
+    VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
+    return success;
+}
+
 bool injectDLL(PROCESS_INFORMATION& pi) {
     LPVOID loadLib = getLoadLibraryAddr();
     if (!loadLib) {
@@ -74,6 +135,57 @@ bool injectDLL(PROCESS_INFORMATION& pi) {
         return false;
     }
 
+    // Determine launcher directory
+    char launcherDir[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, launcherDir, MAX_PATH);
+    char* lastSlash = strrchr(launcherDir, '\\');
+    if (lastSlash) *(lastSlash + 1) = '\0';
+
+    // 1. Pre-load steam_api64.dll into game process if present
+    std::string steamCandidates[] = {
+        std::string(launcherDir) + "steam_api64.dll",
+        toAbsolutePath("steam_api64.dll"),
+        toAbsolutePath("mods\\steam_api64.dll")
+    };
+    for (const auto& candidate : steamCandidates) {
+        WIN32_FIND_DATAA fd = {};
+        HANDLE h = FindFirstFileA(candidate.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            FindClose(h);
+            LOG_INFO(("Pre-loading Steam dependency: " + candidate).c_str());
+            injectSingleDll(pi, loadLib, candidate, true);
+            break;
+        }
+    }
+
+    // 2. Pre-load shared API library SENSE_THE_GAME_MODLOADER_api.dll by absolute path
+    std::string apiCandidates[] = {
+        std::string(launcherDir) + "SENSE_THE_GAME_MODLOADER_api.dll",
+        toAbsolutePath("SENSE_THE_GAME_MODLOADER_api.dll"),
+        toAbsolutePath("mods\\SENSE_THE_GAME_MODLOADER_api.dll")
+    };
+    bool apiLoaded = false;
+    for (const auto& candidate : apiCandidates) {
+        WIN32_FIND_DATAA fd = {};
+        HANDLE h = FindFirstFileA(candidate.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            FindClose(h);
+            LOG_INFO(("Pre-loading Core API DLL: " + candidate).c_str());
+            apiLoaded = injectSingleDll(pi, loadLib, candidate, true);
+            if (apiLoaded) {
+                LOG_INFO("Core API DLL loaded into game successfully.");
+            } else {
+                LOG_WARN("Core API DLL failed to load into game.");
+            }
+            break;
+        }
+    }
+
+    if (!apiLoaded) {
+        LOG_WARN("Core API DLL not found before mod injection! Trying to proceed...");
+    }
+
+    // 3. Inject all mods by absolute path
     auto dlls = getDllFiles("mods");
     if (dlls.empty()) {
         LOG_WARN("No DLLs found in 'mods' folder.");
@@ -89,43 +201,9 @@ bool injectDLL(PROCESS_INFORMATION& pi) {
     bool anySuccess = false;
     for (const auto& dll_path : dlls) {
         LOG_INFO(("Injecting: " + dll_path).c_str());
-
-        LPVOID remoteMem = writeDllPath(pi.hProcess, dll_path.c_str());
-        if (!remoteMem) {
-            LOG_WARN("Failed to write DLL path into target process.");
-            continue;
+        if (injectSingleDll(pi, loadLib, dll_path, false)) {
+            anySuccess = true;
         }
-
-        HANDLE hRemoteThread = CreateRemoteThread(
-            pi.hProcess, NULL, 0,
-            (LPTHREAD_START_ROUTINE)loadLib,
-            remoteMem, 0, NULL
-        );
-
-        if (!hRemoteThread) {
-            LOG_ERROR("CreateRemoteThread");
-            VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
-            continue;
-        }
-
-        WaitForSingleObject(hRemoteThread, INFINITE);
-
-        DWORD exitCode = 0;
-        if (!GetExitCodeThread(hRemoteThread, &exitCode)) {
-            LOG_ERROR("GetExitCodeThread");
-        }
-        else {
-            if (exitCode != 0) {
-                LOG_INFO(("Success! DLL loaded, handle = 0x" + std::to_string(exitCode)).c_str());
-                anySuccess = true;
-            }
-            else {
-                LOG_INFO("LoadLibrary returned NULL – injection failed (DLL likely missing dependencies or wrong architecture).");
-            }
-        }
-
-        CloseHandle(hRemoteThread);
-        VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
     }
 
     return anySuccess;

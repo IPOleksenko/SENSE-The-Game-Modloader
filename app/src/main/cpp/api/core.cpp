@@ -31,6 +31,7 @@ void EventBus::subscribeInit(std::function<void()> handler) { m_initHandlers.pus
 void EventBus::subscribeUpdate(std::function<void(float)> handler) { m_updateHandlers.push_back(handler); }
 void EventBus::subscribePreRender(std::function<void(SDL_Renderer*)> handler) { m_preRenderHandlers.push_back(handler); }
 void EventBus::subscribeRender(std::function<void(SDL_Renderer*)> handler) { m_renderHandlers.push_back(handler); }
+void EventBus::subscribeOverlayRender(std::function<void(SDL_Renderer*, int, int)> handler) { m_overlayRenderHandlers.push_back(handler); }
 void EventBus::subscribeEvent(std::function<void(const SDL_Event&, bool&)> handler) { m_eventHandlers.push_back(handler); }
 void EventBus::subscribeCheckpoint(std::function<void(CheckPoint)> handler) { m_checkpointHandlers.push_back(handler); }
 void EventBus::subscribePlayerLost(std::function<void()> handler) { m_lostHandlers.push_back(handler); }
@@ -50,6 +51,10 @@ void EventBus::dispatchPreRender(SDL_Renderer* renderer) {
 
 void EventBus::dispatchRender(SDL_Renderer* renderer) {
     for (auto& h : m_renderHandlers) h(renderer);
+}
+
+void EventBus::dispatchOverlayRender(SDL_Renderer* renderer, int screenW, int screenH) {
+    for (auto& h : m_overlayRenderHandlers) h(renderer, screenW, screenH);
 }
 
 bool EventBus::dispatchEvent(const SDL_Event& event) {
@@ -114,7 +119,6 @@ typedef void (*PFN_SDL_Delay)(uint32_t);
 typedef int  (*PFN_SDL_RenderClear)(SDL_Renderer*);
 typedef SDL_Window* (*PFN_SDL_RenderGetWindow)(SDL_Renderer*);
 typedef void (*PFN_SDL_GetWindowSize)(SDL_Window*, int*, int*);
-typedef void (*PFN_SDL_RenderWindowToLogical)(SDL_Renderer*, int, int, float*, float*);
 typedef int  (*PFN_SDL_ShowCursor)(int);
 
 typedef int  (*PFN_SDL_RenderCopy)(SDL_Renderer*, SDL_Texture*, const Rect*, const Rect*);
@@ -130,7 +134,6 @@ static PFN_SDL_Delay         g_orig_SDL_Delay = nullptr;
 static PFN_SDL_RenderClear   g_orig_SDL_RenderClear = nullptr;
 static PFN_SDL_RenderGetWindow g_orig_SDL_RenderGetWindow = nullptr;
 static PFN_SDL_GetWindowSize g_orig_SDL_GetWindowSize = nullptr;
-static PFN_SDL_RenderWindowToLogical g_orig_SDL_RenderWindowToLogical = nullptr;
 static PFN_SDL_ShowCursor    g_orig_SDL_ShowCursor = nullptr;
 
 static PFN_SDL_RenderCopy   g_orig_SDL_RenderCopy = nullptr;
@@ -234,9 +237,10 @@ static void Hooked_SDL_RenderPresent(SDL_Renderer* renderer) {
 
     scanStackForPlayer();
 
-    // Query logical renderer dimensions (SENSE uses 1280x720 canvas)
+    // Use logical dimensions when configured, otherwise use the actual renderer output.
     int screenW = 1280;
     int screenH = 720;
+    bool hasLogicalSize = false;
     typedef void (*PFN_SDL_RenderGetLogicalSize)(SDL_Renderer*, int*, int*);
     static PFN_SDL_RenderGetLogicalSize fn_SDL_RenderGetLogicalSize = nullptr;
     if (!fn_SDL_RenderGetLogicalSize) {
@@ -252,6 +256,29 @@ static void Hooked_SDL_RenderPresent(SDL_Renderer* renderer) {
         if (logW > 0 && logH > 0) {
             screenW = logW;
             screenH = logH;
+            hasLogicalSize = true;
+        }
+    }
+
+    if (renderer && !hasLogicalSize) {
+        typedef int (*PFN_SDL_GetRendererOutputSize)(SDL_Renderer*, int*, int*);
+        static PFN_SDL_GetRendererOutputSize fn_SDL_GetRendererOutputSize = nullptr;
+        if (!fn_SDL_GetRendererOutputSize) {
+            HMODULE hSdl = GetModuleHandleA("SDL2.dll");
+            if (hSdl) {
+                fn_SDL_GetRendererOutputSize = reinterpret_cast<PFN_SDL_GetRendererOutputSize>(
+                    GetProcAddress(hSdl, "SDL_GetRendererOutputSize")
+                );
+            }
+        }
+
+        if (fn_SDL_GetRendererOutputSize) {
+            int outputW = 0, outputH = 0;
+            if (fn_SDL_GetRendererOutputSize(renderer, &outputW, &outputH) == 0 &&
+                outputW > 0 && outputH > 0) {
+                screenW = outputW;
+                screenH = outputH;
+            }
         }
     }
 
@@ -360,16 +387,13 @@ static void Hooked_SDL_RenderPresent(SDL_Renderer* renderer) {
     // Quake Developer Terminal Console
     ConsoleController::instance().render(renderer, screenW, screenH);
 
-    // 3. Master UI overlays in SCREEN space
-    if (g_isMasterInstance) {
-        UIController::instance().render(renderer, screenW, screenH);
-    }
+    // 3. Mod-owned UI overlays in SCREEN space
+    EventBus::instance().dispatchOverlayRender(renderer, screenW, screenH);
     RenderController::instance().renderNotifications(renderer, screenW, screenH);
 
-    // 4. Dynamic VSync control for Speedhack & Slow-Mo
+    // 4. Disable VSync for slow motion so the game loop can run below 60 FPS.
     // SENSE_THE_GAME initializes renderer with SDL_RENDERER_PRESENTVSYNC, which hard-caps
-    // SDL_RenderPresent to 60 FPS (16.6ms). To allow speedhack (>1.0x) or slow-mo (<1.0x),
-    // we disable VSync when timeScale != 1.0f!
+    // SDL_RenderPresent to 60 FPS (16.6ms). Disable it while timeScale is below 1.0x.
     typedef int (*PFN_SDL_RenderSetVSync)(SDL_Renderer*, int);
     static PFN_SDL_RenderSetVSync fn_SDL_RenderSetVSync = nullptr;
     if (!fn_SDL_RenderSetVSync) {
@@ -443,51 +467,7 @@ static int Hooked_SDL_PollEvent(SDL_Event* event) {
 
     int result = g_orig_SDL_PollEvent(event);
     if (result && event) {
-        // Map window mouse coordinates to logical coordinates (crucial for fullscreen!)
-        if (g_orig_SDL_RenderWindowToLogical && lowlevel::getRawRenderer()) {
-            if (event->type == 0x400) { // SDL_MOUSEMOTION
-                float lx = 0.0f, ly = 0.0f;
-                g_orig_SDL_RenderWindowToLogical(lowlevel::getRawRenderer(), event->motion.x, event->motion.y, &lx, &ly);
-                event->motion.x = static_cast<int32_t>(lx);
-                event->motion.y = static_cast<int32_t>(ly);
-            }
-            else if (event->type == 0x401 || event->type == 0x402) { // SDL_MOUSEBUTTONDOWN / UP
-                float lx = 0.0f, ly = 0.0f;
-                g_orig_SDL_RenderWindowToLogical(lowlevel::getRawRenderer(), event->button.x, event->button.y, &lx, &ly);
-                event->button.x = static_cast<int32_t>(lx);
-                event->button.y = static_cast<int32_t>(ly);
-            }
-        }
-
-        // Track physical keyboard/controller Endless Mode toggles in game
-        if (event->type == 0x300 /* SDL_KEYDOWN */ && event->key.repeat == 0) {
-            if (event->key.keysym.sym == ' ' /* SDLK_SPACE */) {
-                if (!PlayerController::instance().isMoving()) {
-                    bool newMode = !GameController::instance().isEndlessMode();
-                    GameController::instance().setEndlessModeDirect(newMode);
-                    RenderController::instance().showNotification(
-                        newMode ? "Endless Mode: [ENABLED]" : "Endless Mode: [DISABLED]",
-                        2.0f,
-                        newMode ? Color::Green() : Color::Yellow()
-                    );
-                }
-            }
-        }
-        else if (event->type == 0x653 /* SDL_CONTROLLERBUTTONDOWN */) {
-            if (event->cbutton.button == 0 /* SDL_CONTROLLER_BUTTON_A */) {
-                if (!PlayerController::instance().isMoving()) {
-                    bool newMode = !GameController::instance().isEndlessMode();
-                    GameController::instance().setEndlessModeDirect(newMode);
-                    RenderController::instance().showNotification(
-                        newMode ? "Endless Mode: [ENABLED]" : "Endless Mode: [DISABLED]",
-                        2.0f,
-                        newMode ? Color::Green() : Color::Yellow()
-                    );
-                }
-            }
-        }
-
-        // 1. Quake Developer Console (intercepts first)
+        // 1. Console input
         if (ConsoleController::instance().handleEvent(*event)) {
             event->type = 0;
         }
@@ -498,13 +478,6 @@ static int Hooked_SDL_PollEvent(SDL_Event* event) {
         }
 
         InputManager::instance().handleEvent(*event);
-
-        if (event->type != 0 && g_isMasterInstance) {
-            if (UIController::instance().handleEvent(*event)) {
-                // Event consumed by Developer Menu
-                event->type = 0;
-            }
-        }
 
         bool consumed = EventBus::instance().dispatchEvent(*event);
         if (consumed) {
@@ -517,7 +490,7 @@ static int Hooked_SDL_PollEvent(SDL_Event* event) {
     // Toggle system cursor visibility when menu or console is active
     if (g_orig_SDL_ShowCursor) {
         static bool lastCursor = false;
-        bool menuOpen = UIController::instance().isVisible() ||
+        bool menuOpen = ui::isCursorVisible() ||
                         ConsoleController::instance().isVisible() ||
                         PhotoModeController::instance().isEnabled();
         if (menuOpen != lastCursor) {
@@ -538,9 +511,7 @@ static void Hooked_SDL_Delay(uint32_t ms) {
         // Normal speed: pass through as-is
         targetMs = ms;
     } else {
-        // Scale the actual delay by timeScale:
-        // >1x  -> shorter delay (faster game loop)
-        // <1x  -> longer delay (slower game loop)
+        // Scale the delay to slow down the game loop.
         float scaled = static_cast<float>(ms) / timeScale;
         if (scaled < 0.0f) scaled = 0.0f;
         targetMs = static_cast<uint32_t>(scaled);
@@ -746,7 +717,6 @@ void initCoreHooks() {
     if (hSdl) {
         g_orig_SDL_RenderGetWindow = reinterpret_cast<PFN_SDL_RenderGetWindow>(GetProcAddress(hSdl, "SDL_RenderGetWindow"));
         g_orig_SDL_GetWindowSize = reinterpret_cast<PFN_SDL_GetWindowSize>(GetProcAddress(hSdl, "SDL_GetWindowSize"));
-        g_orig_SDL_RenderWindowToLogical = reinterpret_cast<PFN_SDL_RenderWindowToLogical>(GetProcAddress(hSdl, "SDL_RenderWindowToLogical"));
         g_orig_SDL_ShowCursor = reinterpret_cast<PFN_SDL_ShowCursor>(GetProcAddress(hSdl, "SDL_ShowCursor"));
 
         g_orig_SDL_RenderCopy = reinterpret_cast<PFN_SDL_RenderCopy>(GetProcAddress(hSdl, "SDL_RenderCopy"));
@@ -773,4 +743,3 @@ void initCoreHooks() {
 }
 
 } // namespace sense
-

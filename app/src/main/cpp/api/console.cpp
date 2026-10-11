@@ -1,10 +1,6 @@
 #include "console.hpp"
 #include "render.hpp"
-#include "player.hpp"
-#include "game.hpp"
-#include "environment.hpp"
 #include <sstream>
-#include <algorithm>
 
 namespace sense {
 
@@ -14,76 +10,6 @@ ConsoleController& ConsoleController::instance() {
 }
 
 ConsoleController::ConsoleController() {
-    print("SENSE Modloader Developer Console initialized. Type 'help' for commands.", Color(0, 220, 255));
-
-    // Built-in commands
-    registerCommand("help", "List all available console commands", [this](const std::vector<std::string>&) {
-        print("Available Commands:", Color::Yellow());
-        for (const auto& pair : m_commands) {
-            print("  " + pair.first + " - " + pair.second.description, Color(180, 200, 220));
-        }
-    });
-
-    registerCommand("clear", "Clear console output history", [this](const std::vector<std::string>&) {
-        clear();
-    });
-
-    registerCommand("echo", "Print message to console", [this](const std::vector<std::string>& args) {
-        std::string msg;
-        for (size_t i = 1; i < args.size(); ++i) msg += args[i] + " ";
-        print(msg, Color::White());
-    });
-
-    registerCommand("teleport", "Teleport player to Y position (usage: teleport <y>)", [this](const std::vector<std::string>& args) {
-        if (args.size() < 2) {
-            print("Usage: teleport <y>", Color::Red());
-            return;
-        }
-        int y = std::stoi(args[1]);
-        PlayerController::instance().teleport(y);
-        print("Teleported player to Y = " + std::to_string(y), Color::Green());
-    });
-
-    registerCommand("speed", "Set player speed (usage: speed <value>)", [this](const std::vector<std::string>& args) {
-        if (args.size() < 2) {
-            print("Usage: speed <val>", Color::Red());
-            return;
-        }
-        float spd = std::stof(args[1]);
-        PlayerController::instance().setSpeed(spd);
-        print("Player speed set to " + std::to_string(spd), Color::Green());
-    });
-
-    registerCommand("god", "Toggle God Mode (usage: god <0|1>)", [this](const std::vector<std::string>& args) {
-        bool en = (args.size() >= 2) ? (args[1] == "1" || args[1] == "true") : !PlayerController::instance().isGodMode();
-        PlayerController::instance().setGodMode(en);
-        print(std::string("God Mode: ") + (en ? "ENABLED" : "DISABLED"), Color::Green());
-    });
-
-    registerCommand("timescale", "Set engine timescale (usage: timescale <value>)", [this](const std::vector<std::string>& args) {
-        if (args.size() < 2) {
-            print("Usage: timescale <value>", Color::Red());
-            return;
-        }
-        float ts = std::stof(args[1]);
-        GameController::instance().setTimeScale(ts);
-        print("Timescale set to " + std::to_string(ts), Color::Green());
-    });
-
-    registerCommand("weather", "Set weather (usage: weather <none|rain|snow|fog|ash|matrix>)", [this](const std::vector<std::string>& args) {
-        if (args.size() < 2) {
-            print("Usage: weather <none|rain|snow|fog|ash|matrix>", Color::Red());
-            return;
-        }
-        std::string w = args[1];
-        if (w == "rain") EnvironmentController::instance().setWeather(WeatherType::Rain);
-        else if (w == "snow") EnvironmentController::instance().setWeather(WeatherType::Snow);
-        else if (w == "fog") EnvironmentController::instance().setWeather(WeatherType::Fog);
-        else if (w == "ash") EnvironmentController::instance().setWeather(WeatherType::Ash);
-        else if (w == "matrix") EnvironmentController::instance().setWeather(WeatherType::GlitchMatrix);
-        else EnvironmentController::instance().setWeather(WeatherType::None);
-        print("Weather updated to " + w, Color::Cyan());
-    });
 }
 
 void ConsoleController::registerCommand(const std::string& name, const std::string& description, std::function<void(const std::vector<std::string>&)> handler) {
@@ -92,6 +18,10 @@ void ConsoleController::registerCommand(const std::string& name, const std::stri
     cmd.description = description;
     cmd.handler = handler;
     m_commands[name] = cmd;
+}
+
+const std::map<std::string, ConsoleCommand>& ConsoleController::getCommands() const {
+    return m_commands;
 }
 
 void ConsoleController::print(const std::string& text, const Color& color) {
@@ -133,7 +63,7 @@ void ConsoleController::execute(const std::string& commandLine) {
             print(std::string("Error executing command: ") + e.what(), Color::Red());
         }
     } else {
-        print("Unknown command: '" + cmdName + "'. Type 'help' for a list of commands.", Color::Red());
+        print("Unknown command: '" + cmdName + "'.", Color::Red());
     }
 }
 
@@ -166,12 +96,6 @@ bool ConsoleController::handleEvent(const SDL_Event& event) {
     if (event.type == 0x300 /* SDL_KEYDOWN */) {
         int key = event.key.keysym.sym;
         int scancode = event.key.keysym.scancode;
-
-        // Toggle with ~ / ` (Grave / Tilde)
-        if (scancode == 53 /* SDL_SCANCODE_GRAVE */ || key == '`' || key == '~') {
-            toggle();
-            return true;
-        }
 
         if (!m_visible) return false;
 
@@ -246,7 +170,7 @@ void ConsoleController::render(SDL_Renderer* renderer, int screenW, int screenH)
     rc.drawLine(renderer, 0, consoleH - 28, screenW, consoleH - 28, Color(50, 70, 100, 180));
 
     // Header
-    rc.drawText(renderer, "=== SENSE DEVELOPER CONSOLE (Press ~ to toggle) ===", 12, 8, Color(0, 220, 255), 0.85f);
+    rc.drawText(renderer, "=== SENSE CONSOLE ===", 12, 8, Color(0, 220, 255), 0.85f);
 
     // Logs (last 11 lines)
     int lineH = 18;
@@ -265,4 +189,3 @@ void ConsoleController::render(SDL_Renderer* renderer, int screenW, int screenH)
 }
 
 } // namespace sense
-

@@ -1,6 +1,7 @@
 #include "game.hpp"
 #include "player.hpp"
 #include "lowlevel.hpp"
+#include <algorithm>
 #include <windows.h>
 
 namespace sense {
@@ -19,7 +20,7 @@ float GameController::getTimeScale() const {
 }
 
 void GameController::setTimeScale(float scale) {
-    m_timeScale = (scale <= 0.01f) ? 0.01f : scale;
+    m_timeScale = std::clamp(scale, 0.01f, 1.0f);
 }
 
 bool GameController::isPaused() const {
@@ -126,4 +127,3 @@ void GameController::registerFrame() {
 }
 
 } // namespace sense
-

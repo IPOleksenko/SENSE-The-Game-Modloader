@@ -331,8 +331,8 @@ void SteamController::triggerGameWinAchievement() {
 
     // Notify in-game via RenderController banner toast
     std::string msg = res
-        ? "[STEAM] Achievement Unlocked: HACK_ME! (AppID: 3832650)"
-        : "[STEAM] Won Game! Granted HACK_ME for AppID: 3832650";
+        ? "[STEAM] Achievement Unlocked: <THE UNIVERSE DOESN'T MAKE SENSE.>! (AppID: 3832650)"
+        : "[STEAM] Won Game! Granted <THE UNIVERSE DOESN'T MAKE SENSE.>! for AppID: 3832650";
 
     RenderController::instance().showNotification(msg, 5.0f, Color(255, 215, 0));
 }

@@ -8,7 +8,7 @@ class GameController {
 public:
     static GameController& instance();
 
-    // Time & Speed Controls (Speedhack & Slow-Mo)
+    // Time scale is limited to 0.01x-1.0x.
     float getTimeScale() const;
     void setTimeScale(float scale);
 
@@ -88,4 +88,3 @@ namespace game {
 }
 
 } // namespace sense
-

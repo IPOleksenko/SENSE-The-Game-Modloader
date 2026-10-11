@@ -7,7 +7,7 @@ public:
         info.name = "Trainer & Cheats";
         info.version = "1.0.0";
         info.author = "SenseModTeam";
-        info.description = "Full trainer mod with God Mode, Auto-Balance, Teleports, and Speedhack.";
+        info.description = "Full trainer mod with God Mode, Auto-Balance, and Teleports.";
         return info;
     }
 
@@ -33,17 +33,6 @@ public:
                 player.isAutoBalance() ? "Auto-Balancer: [ACTIVE]" : "Auto-Balancer: [OFF]",
                 2.0f,
                 player.isAutoBalance() ? sense::Color::Green() : sense::Color::Red()
-            );
-        });
-
-        // F6: Speedhack (2.0x)
-        sense::input::registerHotkey(sense::Key_F6, [this]() {
-            m_speedhackActive = !m_speedhackActive;
-            sense::game::setTimeScale(m_speedhackActive ? 2.0f : 1.0f);
-            sense::render::showNotification(
-                m_speedhackActive ? "Speedhack: 2.0x [ACTIVE]" : "Speedhack: Normal [1.0x]",
-                2.0f,
-                m_speedhackActive ? sense::Color::Magenta() : sense::Color::White()
             );
         });
 
@@ -78,11 +67,23 @@ public:
     }
 
     void onUpdate(float deltaTime) override {
-        // Sync proxies with player state
         auto& p = sense::api().player();
         if (p.isValid()) {
-            if (m_godModeProxy != p.isGodMode()) p.setGodMode(m_godModeProxy);
-            if (m_autoBalanceProxy != p.isAutoBalance()) p.setAutoBalance(m_autoBalanceProxy);
+            if (m_godModeProxy != m_lastGodModeProxy) {
+                p.setGodMode(m_godModeProxy);
+                m_lastGodModeProxy = m_godModeProxy;
+            } else {
+                m_godModeProxy = p.isGodMode();
+                m_lastGodModeProxy = m_godModeProxy;
+            }
+
+            if (m_autoBalanceProxy != m_lastAutoBalanceProxy) {
+                p.setAutoBalance(m_autoBalanceProxy);
+                m_lastAutoBalanceProxy = m_autoBalanceProxy;
+            } else {
+                m_autoBalanceProxy = p.isAutoBalance();
+                m_lastAutoBalanceProxy = m_autoBalanceProxy;
+            }
         }
     }
 
@@ -103,18 +104,13 @@ public:
             badgeY += 24;
         }
 
-        if (m_speedhackActive) {
-            sense::render::fillRect(renderer, sense::Rect(10, badgeY, 140, 20), sense::Color(180, 50, 180, 220));
-            sense::render::drawText(renderer, "SPEEDHACK: 2.0x", 18, badgeY + 4, sense::Color::White(), 0.9f);
-            badgeY += 24;
-        }
     }
 
 private:
-    bool m_speedhackActive = false;
     bool m_godModeProxy = false;
     bool m_autoBalanceProxy = false;
+    bool m_lastGodModeProxy = false;
+    bool m_lastAutoBalanceProxy = false;
 };
 
 REGISTER_MOD(CheatMenuMod)
-

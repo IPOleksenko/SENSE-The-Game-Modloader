@@ -25,6 +25,7 @@ public:
     static ConsoleController& instance();
 
     void registerCommand(const std::string& name, const std::string& description, std::function<void(const std::vector<std::string>& args)> handler);
+    const std::map<std::string, ConsoleCommand>& getCommands() const;
     void execute(const std::string& commandLine);
 
     void print(const std::string& text, const Color& color = Color::White());
@@ -68,4 +69,3 @@ namespace console {
 }
 
 } // namespace sense
-

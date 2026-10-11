@@ -46,7 +46,7 @@ jobs:
 
       # ── Collect artifacts ────────────────────────────────────────────────────
 
-      # Shared helper: copy base launcher & API DLL
+      # Shared helper: copy launcher and API DLL for all flavors.
       - name: Collect core files (shared base)
         shell: pwsh
         run: |

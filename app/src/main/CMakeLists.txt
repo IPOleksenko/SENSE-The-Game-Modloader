@@ -48,9 +48,6 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:${PROJECT_NAME}_api>
         $<TARGET_FILE_DIR:${PROJECT_NAME}>/$<TARGET_FILE_NAME:${PROJECT_NAME}_api>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:${PROJECT_NAME}_api>
-        $<TARGET_FILE_DIR:${PROJECT_NAME}>/mods/$<TARGET_FILE_NAME:${PROJECT_NAME}_api>
 )
 
 foreach(MOD_TARGET ${ALL_MOD_TARGETS})
@@ -66,9 +63,6 @@ if(EXISTS "${ASSETS_DIR}/steam_api64.dll")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${ASSETS_DIR}/steam_api64.dll"
             "$<TARGET_FILE_DIR:${PROJECT_NAME}>/steam_api64.dll"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${ASSETS_DIR}/steam_api64.dll"
-            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/mods/steam_api64.dll"
     )
 endif()
 
@@ -78,9 +72,7 @@ if(EXISTS "${PROJECT_ROOT}/build/Debug")
         COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_ROOT}/build/Debug/mods/"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${PROJECT_NAME}> "${PROJECT_ROOT}/build/Debug/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${PROJECT_NAME}_api> "${PROJECT_ROOT}/build/Debug/$<TARGET_FILE_NAME:${PROJECT_NAME}_api>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${PROJECT_NAME}_api> "${PROJECT_ROOT}/build/Debug/mods/$<TARGET_FILE_NAME:${PROJECT_NAME}_api>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASSETS_DIR}/steam_api64.dll" "${PROJECT_ROOT}/build/Debug/steam_api64.dll"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASSETS_DIR}/steam_api64.dll" "${PROJECT_ROOT}/build/Debug/mods/steam_api64.dll"
     )
     foreach(MOD_TARGET ${ALL_MOD_TARGETS})
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

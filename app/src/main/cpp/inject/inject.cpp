@@ -22,7 +22,7 @@ std::vector<std::string> getDllFiles(const std::string& folder) {
 
     do {
         if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            // Ignore core engine / library DLLs if placed in mods folder
+            // Runtime libraries are loaded separately.
             if (_stricmp(fd.cFileName, "SENSE_THE_GAME_MODLOADER_api.dll") == 0 ||
                 _stricmp(fd.cFileName, "steam_api64.dll") == 0 ||
                 _stricmp(fd.cFileName, "SDL2.dll") == 0 ||
@@ -158,26 +158,19 @@ bool injectDLL(PROCESS_INFORMATION& pi) {
         }
     }
 
-    // 2. Pre-load shared API library SENSE_THE_GAME_MODLOADER_api.dll by absolute path
-    std::string apiCandidates[] = {
-        std::string(launcherDir) + "SENSE_THE_GAME_MODLOADER_api.dll",
-        toAbsolutePath("SENSE_THE_GAME_MODLOADER_api.dll"),
-        toAbsolutePath("mods\\SENSE_THE_GAME_MODLOADER_api.dll")
-    };
+    // 2. Pre-load the shared API library from beside the launcher.
+    std::string apiPath = std::string(launcherDir) + "SENSE_THE_GAME_MODLOADER_api.dll";
     bool apiLoaded = false;
-    for (const auto& candidate : apiCandidates) {
-        WIN32_FIND_DATAA fd = {};
-        HANDLE h = FindFirstFileA(candidate.c_str(), &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            FindClose(h);
-            LOG_INFO(("Pre-loading Core API DLL: " + candidate).c_str());
-            apiLoaded = injectSingleDll(pi, loadLib, candidate, true);
-            if (apiLoaded) {
-                LOG_INFO("Core API DLL loaded into game successfully.");
-            } else {
-                LOG_WARN("Core API DLL failed to load into game.");
-            }
-            break;
+    WIN32_FIND_DATAA apiData = {};
+    HANDLE apiFile = FindFirstFileA(apiPath.c_str(), &apiData);
+    if (apiFile != INVALID_HANDLE_VALUE) {
+        FindClose(apiFile);
+        LOG_INFO(("Pre-loading Core API DLL: " + apiPath).c_str());
+        apiLoaded = injectSingleDll(pi, loadLib, apiPath, true);
+        if (apiLoaded) {
+            LOG_INFO("Core API DLL loaded into game successfully.");
+        } else {
+            LOG_WARN("Core API DLL failed to load into game.");
         }
     }
 
@@ -185,8 +178,9 @@ bool injectDLL(PROCESS_INFORMATION& pi) {
         LOG_WARN("Core API DLL not found before mod injection! Trying to proceed...");
     }
 
-    // 3. Inject all mods by absolute path
+    // 3. Inject all mod DLLs from mods/.
     auto dlls = getDllFiles("mods");
+
     if (dlls.empty()) {
         LOG_WARN("No DLLs found in 'mods' folder.");
         return false;

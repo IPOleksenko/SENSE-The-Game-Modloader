@@ -67,17 +67,14 @@ jobs:
       - name: Collect achievements release
         shell: pwsh
         run: |
-          $modsDir = "build_x86_64/Release/mods"
+          $src = "build_x86_64/Release"
           New-Item -ItemType Directory -Force -Path "dist/achievements/mods" | Out-Null
-          if (Test-Path "$modsDir/steam_achievements.dll") {
-            Copy-Item "$modsDir/steam_achievements.dll" "dist/achievements/mods/" -Force
+          if (Test-Path "$src/mods/steam_achievements.dll") {
+            Copy-Item "$src/mods/steam_achievements.dll" "dist/achievements/mods/" -Force
           }
-          # steam_api64.dll must also be inside mods/ (inject.cpp loads it from there)
-          if (Test-Path "build_x86_64/Release/steam_api64.dll") {
-            Copy-Item "build_x86_64/Release/steam_api64.dll" "dist/achievements/mods/" -Force
-          }
-          if (Test-Path "$modsDir/SENSE_THE_GAME_MODLOADER_api.dll") {
-            Copy-Item "$modsDir/SENSE_THE_GAME_MODLOADER_api.dll" "dist/achievements/mods/" -Force
+          # steam_api64.dll is kept beside the launcher and preloaded by inject.cpp.
+          if (Test-Path "$src/steam_api64.dll") {
+            Copy-Item "$src/steam_api64.dll" "dist/achievements/" -Force
           }
 
       # full — core + entire mods/ folder
